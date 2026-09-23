@@ -22,4 +22,6 @@ PROCEDURE DIVISION.
     DISPLAY "Hostname: ", NODE-NAME.
     DISPLAY "OS: ", OS-NAME.
     DISPLAY "Kernel: ", OS-RELEASE.
+    DISPLAY "CPU: I WILL DO IT. ".
+    DISPLAY "Arch: ", MACHINE.
     STOP RUN.
