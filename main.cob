@@ -10,7 +10,6 @@ FILE-CONTROL.
 
 DATA DIVISION.
 
-
 FILE SECTION.
 
 FD CPUFILE.
@@ -18,6 +17,7 @@ FD CPUFILE.
 
 WORKING-STORAGE SECTION.
 
+*> uname
 01 UTSNAME.
     05 OS-NAME      PIC X(65).
     05 NODE-NAME    PIC X(65).
@@ -25,30 +25,51 @@ WORKING-STORAGE SECTION.
     05 OS-VERSION   PIC X(65).
     05 MACHINE      PIC X(65).
     05 DOMAIN-NAME  PIC X(65).
-    
+
 01 OSRESULT PIC S9(9) COMP-5.
 
+*> cpu parse 
+01 CPU-MODEL PIC X(256).
+01 CPU-KEY   PIC X(32).
+01 EOF-FLAG  PIC X VALUE "N".
+01 CPU-FOUND PIC X VALUE "N".
 
 PROCEDURE DIVISION.
 
-        OPEN INPUT CPUFILE.
+    *> cpu from cpuinfo
+    OPEN INPUT CPUFILE.
 
-    READ CPUFILE
-        AT END
-            DISPLAY "File empty."
-        NOT AT END
-            DISPLAY CPU-LINE
-    END-READ.
+    PERFORM UNTIL EOF-FLAG = "Y" OR CPU-FOUND = "Y"
+
+        READ CPUFILE
+            AT END
+                MOVE "Y" TO EOF-FLAG
+
+            NOT AT END
+                IF CPU-LINE(1:10) = "model name"
+                    UNSTRING CPU-LINE
+                        DELIMITED BY ":"
+                        INTO CPU-KEY CPU-MODEL
+                    END-UNSTRING
+
+                    MOVE "Y" TO CPU-FOUND
+                END-IF
+        END-READ
+
+    END-PERFORM.
 
     CLOSE CPUFILE.
 
+    *> calling system stuffs from uname
     CALL "uname"
         USING BY REFERENCE UTSNAME
         RETURNING OSRESULT.
-        
-    DISPLAY "Hostname: ", NODE-NAME.
-    DISPLAY "OS: ", OS-NAME.
-    DISPLAY "Kernel: ", OS-RELEASE.
-    DISPLAY "CPU: I WILL DO IT. ".
-    DISPLAY "Arch: ", MACHINE.
+
+    *> print
+    DISPLAY "Hostname: " NODE-NAME.
+    DISPLAY "OS: " OS-NAME.
+    DISPLAY "Kernel: " OS-RELEASE.
+    DISPLAY "CPU: " FUNCTION TRIM(CPU-MODEL).
+    DISPLAY "Arch: " MACHINE.
+
     STOP RUN.
