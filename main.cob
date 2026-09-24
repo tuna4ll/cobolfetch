@@ -13,6 +13,15 @@ FILE-CONTROL.
         ASSIGN TO "/proc/uptime"
         ORGANIZATION IS LINE SEQUENTIAL.
 
+    SELECT OSRELEASEFILE
+        ASSIGN TO "/etc/os-release"
+        ORGANIZATION IS LINE SEQUENTIAL.
+
+    SELECT LOGOFILE
+        ASSIGN TO LOGO-PATH
+        ORGANIZATION IS LINE SEQUENTIAL
+        FILE STATUS IS LOGO-STATUS.
+
 
 DATA DIVISION.
 
@@ -24,23 +33,36 @@ FD CPUFILE.
 FD UPTIMEFILE.
 01 UPTIME-LINE PIC X(128).
 
+FD OSRELEASEFILE.
+01 OSREL-LINE PIC X(256).
+
+FD LOGOFILE.
+01 LOGO-RECORD PIC X(24).
+
 
 WORKING-STORAGE SECTION.
-
-*> hardcoded ascii lol
-01 ASCII1 PIC X(15) VALUE "      /\       ".
-01 ASCII2 PIC X(15) VALUE "     /  \      ".
-01 ASCII3 PIC X(15) VALUE "    /    \     ".
-01 ASCII4 PIC X(15) VALUE "   /      \    ".
-01 ASCII5 PIC X(15) VALUE "  /   ,,   \   ".
-01 ASCII6 PIC X(15) VALUE " /   |  |   \  ".
-01 ASCII7 PIC X(15) VALUE "/_-''    ''-_\ ".
-01 ASCII8 PIC X(15) VALUE "               ".
-
 
 *> coloring
 01 CYAN       PIC X(5) VALUE X"1B5B33366D".
 01 RESETCOLOR PIC X(4) VALUE X"1B5B306D".
+
+
+*> logo stuff
+01 LOGO-PATH   PIC X(128).
+01 LOGO-STATUS PIC XX.
+01 LOGO-EOF    PIC X VALUE "N".
+01 LOGO-IDX    PIC 99 VALUE 1.
+
+01 LOGO-TABLE.
+    05 LOGO-LINE PIC X(24) OCCURS 8 TIMES.
+
+
+*> distro stuff
+01 DISTRO-ID    PIC X(32).
+01 DISTRO-LIKE  PIC X(64).
+01 DISTRO-BASE  PIC X(32).
+01 DISTRO-NAME  PIC X(128).
+01 OSREL-EOF    PIC X VALUE "N".
 
 
 *> uname
@@ -78,6 +100,118 @@ WORKING-STORAGE SECTION.
 
 
 PROCEDURE DIVISION.
+
+    *> distro from os-release
+    OPEN INPUT OSRELEASEFILE.
+
+    PERFORM UNTIL OSREL-EOF = "Y"
+
+        READ OSRELEASEFILE
+            AT END
+                MOVE "Y" TO OSREL-EOF
+
+            NOT AT END
+
+                IF OSREL-LINE(1:3) = "ID="
+                    MOVE FUNCTION TRIM(OSREL-LINE(4:253))
+                        TO DISTRO-ID
+                    INSPECT DISTRO-ID
+                        REPLACING ALL X"22" BY SPACE
+                    MOVE FUNCTION TRIM(DISTRO-ID)
+                        TO DISTRO-ID
+                END-IF
+
+                IF OSREL-LINE(1:8) = "ID_LIKE="
+                    MOVE FUNCTION TRIM(OSREL-LINE(9:248))
+                        TO DISTRO-LIKE
+                    INSPECT DISTRO-LIKE
+                        REPLACING ALL X"22" BY SPACE
+                    MOVE FUNCTION TRIM(DISTRO-LIKE)
+                        TO DISTRO-LIKE
+                END-IF
+
+                IF OSREL-LINE(1:12) = "PRETTY_NAME="
+                    MOVE FUNCTION TRIM(OSREL-LINE(13:244))
+                        TO DISTRO-NAME
+                    INSPECT DISTRO-NAME
+                        REPLACING ALL X"22" BY SPACE
+                END-IF
+
+        END-READ
+
+    END-PERFORM.
+
+    CLOSE OSRELEASEFILE.
+
+
+    *> first base distro from id_like
+    UNSTRING DISTRO-LIKE
+        DELIMITED BY SPACE
+        INTO DISTRO-BASE
+    END-UNSTRING.
+
+
+    *> try logo/distro-id.txt first
+    MOVE SPACES TO LOGO-PATH.
+
+    STRING
+        "logo/"
+        DISTRO-ID DELIMITED BY SPACE
+        ".txt"
+        INTO LOGO-PATH
+    END-STRING.
+
+    OPEN INPUT LOGOFILE.
+
+
+    *> fallback to id_like, like arch
+    IF LOGO-STATUS NOT = "00"
+
+        MOVE SPACES TO LOGO-PATH
+
+        STRING
+            "logo/"
+            DISTRO-BASE DELIMITED BY SPACE
+            ".txt"
+            INTO LOGO-PATH
+        END-STRING
+
+        OPEN INPUT LOGOFILE
+    END-IF.
+
+
+    *> final fallback
+    IF LOGO-STATUS NOT = "00"
+
+        MOVE "logo/linux.txt" TO LOGO-PATH
+        OPEN INPUT LOGOFILE
+    END-IF.
+
+
+    *> read logo
+    MOVE SPACES TO LOGO-TABLE.
+
+    IF LOGO-STATUS = "00"
+
+        MOVE 1 TO LOGO-IDX
+        MOVE "N" TO LOGO-EOF
+
+        PERFORM UNTIL LOGO-EOF = "Y" OR LOGO-IDX > 8
+
+            READ LOGOFILE
+                AT END
+                    MOVE "Y" TO LOGO-EOF
+
+                NOT AT END
+                    MOVE LOGO-RECORD TO LOGO-LINE(LOGO-IDX)
+                    ADD 1 TO LOGO-IDX
+            END-READ
+
+        END-PERFORM
+
+        CLOSE LOGOFILE
+    END-IF.
+
 
     *> cpu from cpuinfo
     OPEN INPUT CPUFILE.
@@ -140,26 +274,38 @@ PROCEDURE DIVISION.
     MOVE UPTIME-MINS TO UPTIME-MINS-OUT.
 
 
-    *> calling system stuffs from uname
+    *> system stuff from uname
     CALL "uname"
         USING BY REFERENCE UTSNAME
         RETURNING OSRESULT.
 
 
     *> print
-    DISPLAY CYAN ASCII1 "Hostname: " RESETCOLOR NODE-NAME.
-    DISPLAY CYAN ASCII2 "OS: " RESETCOLOR OS-NAME.
-    DISPLAY CYAN ASCII3 "Kernel: " RESETCOLOR OS-RELEASE.
-    DISPLAY CYAN ASCII4 "CPU: " RESETCOLOR
-        FUNCTION TRIM(CPU-MODEL).
-    DISPLAY CYAN ASCII5 "Arch: " RESETCOLOR MACHINE.
+    DISPLAY CYAN LOGO-LINE(1) "Hostname: "
+        RESETCOLOR NODE-NAME.
 
-    DISPLAY CYAN ASCII6 "Uptime: " RESETCOLOR
+    DISPLAY CYAN LOGO-LINE(2) "OS: "
+        RESETCOLOR FUNCTION TRIM(DISTRO-NAME).
+
+    DISPLAY CYAN LOGO-LINE(3) "Kernel: "
+        RESETCOLOR OS-RELEASE.
+
+    DISPLAY CYAN LOGO-LINE(4) "CPU: "
+        RESETCOLOR FUNCTION TRIM(CPU-MODEL).
+
+    DISPLAY CYAN LOGO-LINE(5) "Arch: "
+        RESETCOLOR MACHINE.
+
+    DISPLAY CYAN LOGO-LINE(6) "Uptime: "
+        RESETCOLOR
         FUNCTION TRIM(UPTIME-DAYS-OUT) "d "
         FUNCTION TRIM(UPTIME-HOURS-OUT) "h "
         FUNCTION TRIM(UPTIME-MINS-OUT) "m".
 
-    DISPLAY CYAN ASCII7 "Memory: " RESETCOLOR "OTW".
-    DISPLAY CYAN ASCII8 "Swap: " RESETCOLOR "OTW".
+    DISPLAY CYAN LOGO-LINE(7) "Memory: "
+        RESETCOLOR "OTW".
+
+    DISPLAY CYAN LOGO-LINE(8) "Swap: "
+        RESETCOLOR "OTW".
 
     STOP RUN.
