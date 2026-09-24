@@ -37,7 +37,7 @@ FD OSRELEASEFILE.
 01 OSREL-LINE PIC X(256).
 
 FD LOGOFILE.
-01 LOGO-RECORD PIC X(24).
+01 LOGO-RECORD PIC X(32).
 
 
 WORKING-STORAGE SECTION.
@@ -52,9 +52,10 @@ WORKING-STORAGE SECTION.
 01 LOGO-STATUS PIC XX.
 01 LOGO-EOF    PIC X VALUE "N".
 01 LOGO-IDX    PIC 99 VALUE 1.
+01 LOGO-COUNT  PIC 99 VALUE 0.
 
 01 LOGO-TABLE.
-    05 LOGO-LINE PIC X(24) OCCURS 8 TIMES.
+    05 LOGO-LINE PIC X(32) OCCURS 32 TIMES.
 
 
 *> distro stuff
@@ -115,8 +116,10 @@ PROCEDURE DIVISION.
                 IF OSREL-LINE(1:3) = "ID="
                     MOVE FUNCTION TRIM(OSREL-LINE(4:253))
                         TO DISTRO-ID
+
                     INSPECT DISTRO-ID
                         REPLACING ALL X"22" BY SPACE
+
                     MOVE FUNCTION TRIM(DISTRO-ID)
                         TO DISTRO-ID
                 END-IF
@@ -124,8 +127,10 @@ PROCEDURE DIVISION.
                 IF OSREL-LINE(1:8) = "ID_LIKE="
                     MOVE FUNCTION TRIM(OSREL-LINE(9:248))
                         TO DISTRO-LIKE
+
                     INSPECT DISTRO-LIKE
                         REPLACING ALL X"22" BY SPACE
+
                     MOVE FUNCTION TRIM(DISTRO-LIKE)
                         TO DISTRO-LIKE
                 END-IF
@@ -133,8 +138,12 @@ PROCEDURE DIVISION.
                 IF OSREL-LINE(1:12) = "PRETTY_NAME="
                     MOVE FUNCTION TRIM(OSREL-LINE(13:244))
                         TO DISTRO-NAME
+
                     INSPECT DISTRO-NAME
                         REPLACING ALL X"22" BY SPACE
+
+                    MOVE FUNCTION TRIM(DISTRO-NAME)
+                        TO DISTRO-NAME
                 END-IF
 
         END-READ
@@ -144,14 +153,14 @@ PROCEDURE DIVISION.
     CLOSE OSRELEASEFILE.
 
 
-    *> first base distro from id_like
+    *> first id_like distro
     UNSTRING DISTRO-LIKE
         DELIMITED BY SPACE
         INTO DISTRO-BASE
     END-UNSTRING.
 
 
-    *> try logo/distro-id.txt first
+    *> try exact distro logo
     MOVE SPACES TO LOGO-PATH.
 
     STRING
@@ -164,7 +173,7 @@ PROCEDURE DIVISION.
     OPEN INPUT LOGOFILE.
 
 
-    *> fallback to id_like, like arch
+    *> fallback to base distro
     IF LOGO-STATUS NOT = "00"
 
         MOVE SPACES TO LOGO-PATH
@@ -180,7 +189,7 @@ PROCEDURE DIVISION.
     END-IF.
 
 
-    *> final fallback
+    *> fallback to generic linux logo
     IF LOGO-STATUS NOT = "00"
 
         MOVE "logo/linux.txt" TO LOGO-PATH
@@ -194,16 +203,20 @@ PROCEDURE DIVISION.
     IF LOGO-STATUS = "00"
 
         MOVE 1 TO LOGO-IDX
+        MOVE 0 TO LOGO-COUNT
         MOVE "N" TO LOGO-EOF
 
-        PERFORM UNTIL LOGO-EOF = "Y" OR LOGO-IDX > 8
+        PERFORM UNTIL LOGO-EOF = "Y" OR LOGO-IDX > 32
 
             READ LOGOFILE
                 AT END
                     MOVE "Y" TO LOGO-EOF
 
                 NOT AT END
-                    MOVE LOGO-RECORD TO LOGO-LINE(LOGO-IDX)
+                    MOVE LOGO-RECORD
+                        TO LOGO-LINE(LOGO-IDX)
+
+                    ADD 1 TO LOGO-COUNT
                     ADD 1 TO LOGO-IDX
             END-READ
 
@@ -224,6 +237,7 @@ PROCEDURE DIVISION.
 
             NOT AT END
                 IF CPU-LINE(1:10) = "model name"
+
                     UNSTRING CPU-LINE
                         DELIMITED BY ":"
                         INTO CPU-KEY CPU-MODEL
@@ -251,8 +265,11 @@ PROCEDURE DIVISION.
 
     CLOSE UPTIMEFILE.
 
-    MOVE FUNCTION NUMVAL(UPTIME-TEXT) TO UPTIME-SECS.
-    MOVE FUNCTION INTEGER(UPTIME-SECS) TO UPTIME-TOTAL.
+    MOVE FUNCTION NUMVAL(UPTIME-TEXT)
+        TO UPTIME-SECS.
+
+    MOVE FUNCTION INTEGER(UPTIME-SECS)
+        TO UPTIME-TOTAL.
 
     COMPUTE UPTIME-DAYS =
         FUNCTION INTEGER(UPTIME-TOTAL / 86400).
@@ -269,12 +286,17 @@ PROCEDURE DIVISION.
     COMPUTE UPTIME-MINS =
         FUNCTION INTEGER(UPTIME-REST / 60).
 
-    MOVE UPTIME-DAYS TO UPTIME-DAYS-OUT.
-    MOVE UPTIME-HOURS TO UPTIME-HOURS-OUT.
-    MOVE UPTIME-MINS TO UPTIME-MINS-OUT.
+    MOVE UPTIME-DAYS
+        TO UPTIME-DAYS-OUT.
+
+    MOVE UPTIME-HOURS
+        TO UPTIME-HOURS-OUT.
+
+    MOVE UPTIME-MINS
+        TO UPTIME-MINS-OUT.
 
 
-    *> system stuff from uname
+    *> system stuffs from uname
     CALL "uname"
         USING BY REFERENCE UTSNAME
         RETURNING OSRESULT.
@@ -307,5 +329,20 @@ PROCEDURE DIVISION.
 
     DISPLAY CYAN LOGO-LINE(8) "Swap: "
         RESETCOLOR "OTW".
+
+
+    *> print rest of logo
+    IF LOGO-COUNT > 8
+
+        PERFORM VARYING LOGO-IDX FROM 9 BY 1
+            UNTIL LOGO-IDX > LOGO-COUNT
+
+            DISPLAY CYAN
+                LOGO-LINE(LOGO-IDX)
+                RESETCOLOR
+
+        END-PERFORM
+
+    END-IF.
 
     STOP RUN.
