@@ -1,16 +1,21 @@
 TARGET := build/cobolfetch
 SRC := main.cob
+LOGOS := $(wildcard logo/*.txt)
+LOGO_CPY := build/logos.cpy
 
 .PHONY: all clean run
 
 all: $(TARGET)
 
-$(TARGET): $(SRC)
+$(LOGO_CPY): $(LOGOS) gen-logos.sh
 	mkdir -p build
-	gcobol $(SRC) -o $(TARGET)
+	sh gen-logos.sh $(LOGOS) > $(LOGO_CPY)
+
+$(TARGET): $(SRC) $(LOGO_CPY)
+	gcobol -I build $(SRC) -o $(TARGET)
 
 run: $(TARGET)
 	./$(TARGET)
 
 clean:
-	rm -rf build
+	rm -rf build a.out

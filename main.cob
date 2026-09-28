@@ -21,11 +21,6 @@ FILE-CONTROL.
         ASSIGN TO "/etc/os-release"
         ORGANIZATION IS LINE SEQUENTIAL.
 
-    SELECT LOGOFILE
-        ASSIGN TO LOGO-PATH
-        ORGANIZATION IS LINE SEQUENTIAL
-        FILE STATUS IS LOGO-STATUS.
-
 
 DATA DIVISION.
 
@@ -42,9 +37,6 @@ FD MEMINFOFILE.
 
 FD OSRELEASEFILE.
 01 OSREL-LINE PIC X(256).
-
-FD LOGOFILE.
-01 LOGO-RECORD PIC X(32).
 
 
 WORKING-STORAGE SECTION.
@@ -65,10 +57,12 @@ WORKING-STORAGE SECTION.
 01 LAST-LINE      PIC 99.
 
 
-*> logo stuff
-01 LOGO-PATH   PIC X(128).
-01 LOGO-STATUS PIC XX.
-01 LOGO-EOF    PIC X VALUE "N".
+*> logo stuff (logos are baked in from logo/*.txt at build time)
+COPY "logos.cpy".
+
+01 LOGO-WANTED PIC X(32).
+01 LOGO-FOUND  PIC 99 VALUE 0.
+01 ENTRY-IDX   PIC 99.
 01 LOGO-IDX    PIC 99 VALUE 1.
 01 LOGO-COUNT  PIC 99 VALUE 0.
 
@@ -206,69 +200,34 @@ PROCEDURE DIVISION.
     END-UNSTRING.
 
 
-    *> try exact distro logo
-    MOVE SPACES TO LOGO-PATH.
+    *> try exact distro logo, then base distro, then generic linux
+    MOVE DISTRO-ID TO LOGO-WANTED.
+    PERFORM FIND-LOGO.
 
-    STRING
-        "logo/"
-        DISTRO-ID DELIMITED BY SPACE
-        ".txt"
-        INTO LOGO-PATH
-    END-STRING.
+    IF LOGO-FOUND = 0
+        MOVE DISTRO-BASE TO LOGO-WANTED
+        PERFORM FIND-LOGO
+    END-IF.
 
-    OPEN INPUT LOGOFILE.
-
-
-    *> fallback to base distro
-    IF LOGO-STATUS NOT = "00"
-
-        MOVE SPACES TO LOGO-PATH
-
-        STRING
-            "logo/"
-            DISTRO-BASE DELIMITED BY SPACE
-            ".txt"
-            INTO LOGO-PATH
-        END-STRING
-
-        OPEN INPUT LOGOFILE
+    IF LOGO-FOUND = 0
+        MOVE "linux" TO LOGO-WANTED
+        PERFORM FIND-LOGO
     END-IF.
 
 
-    *> fallback to generic linux logo
-    IF LOGO-STATUS NOT = "00"
-
-        MOVE "logo/linux.txt" TO LOGO-PATH
-        OPEN INPUT LOGOFILE
-    END-IF.
-
-
-    *> read logo
+    *> copy logo into table
     MOVE SPACES TO LOGO-TABLE.
 
-    IF LOGO-STATUS = "00"
+    IF LOGO-FOUND > 0
+        MOVE LOGO-ENTRY-COUNT(LOGO-FOUND) TO LOGO-COUNT
 
-        MOVE 1 TO LOGO-IDX
-        MOVE 0 TO LOGO-COUNT
-        MOVE "N" TO LOGO-EOF
+        PERFORM VARYING LOGO-IDX FROM 1 BY 1
+            UNTIL LOGO-IDX > LOGO-COUNT
 
-        PERFORM UNTIL LOGO-EOF = "Y" OR LOGO-IDX > 32
-
-            READ LOGOFILE
-                AT END
-                    MOVE "Y" TO LOGO-EOF
-
-                NOT AT END
-                    MOVE LOGO-RECORD
-                        TO LOGO-LINE(LOGO-IDX)
-
-                    ADD 1 TO LOGO-COUNT
-                    ADD 1 TO LOGO-IDX
-            END-READ
+            MOVE LOGO-ENTRY-LINE(LOGO-FOUND LOGO-IDX)
+                TO LOGO-LINE(LOGO-IDX)
 
         END-PERFORM
-
-        CLOSE LOGOFILE
     END-IF.
 
 
@@ -516,3 +475,18 @@ PARSE-MEMINFO-VALUE.
         DELIMITED BY ALL SPACE
         INTO MEMINFO-KEY MEMINFO-VALUE-TEXT MEMINFO-UNIT
     END-UNSTRING.
+
+
+FIND-LOGO.
+    MOVE 0 TO LOGO-FOUND.
+
+    IF LOGO-WANTED NOT = SPACES
+        PERFORM VARYING ENTRY-IDX FROM 1 BY 1
+            UNTIL ENTRY-IDX > LOGO-ENTRY-TOTAL OR LOGO-FOUND > 0
+
+            IF LOGO-ENTRY-ID(ENTRY-IDX) = LOGO-WANTED
+                MOVE ENTRY-IDX TO LOGO-FOUND
+            END-IF
+
+        END-PERFORM
+    END-IF.
