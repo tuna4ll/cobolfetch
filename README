@@ -3,6 +3,4 @@ small linux fetch written in cobol while learning the language from docs.
 i started this project because i wanted to learn cobol and thought writing
 something like a tiny fastfetch would be more fun than doing basic examples
 
-currently shows hostname, os, kernel, cpu and arch.
-
-uptime, memory and swap coming later.
+shows hostname, os, kernel, cpu, arch, uptime, memory and swap.
